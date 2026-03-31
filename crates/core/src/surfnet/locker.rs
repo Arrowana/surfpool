@@ -847,6 +847,7 @@ impl SurfnetSvmLocker {
                             memo: None,
                             block_time: None,
                             confirmation_status: Some(confirmation_status),
+                            transaction_index: None,
                             signature: sig,
                         })
                     })
@@ -960,6 +961,7 @@ impl SurfnetSvmLocker {
                     slot,
                     transaction: encoded,
                     block_time: Some(block_time),
+                    transaction_index: None,
                 },
                 latest_absolute_slot,
             ))
@@ -2322,17 +2324,13 @@ impl SurfnetSvmLocker {
         message: &VersionedMessage,
         all_transaction_lookup_table_addresses: Option<Vec<&Pubkey>>,
     ) -> Vec<Pubkey> {
-        match message {
-            VersionedMessage::Legacy(message) => message.account_keys.clone(),
-            VersionedMessage::V0(message) => {
-                let mut acc_keys = message.account_keys.clone();
-
-                if let Some(loaded_addresses) = all_transaction_lookup_table_addresses {
-                    acc_keys.extend(loaded_addresses);
-                }
-                acc_keys
+        let mut acc_keys = message.static_account_keys().to_vec();
+        if message.address_table_lookups().is_some() {
+            if let Some(loaded_addresses) = all_transaction_lookup_table_addresses {
+                acc_keys.extend(loaded_addresses);
             }
         }
+        acc_keys
     }
 
     /// Gets addresses loaded from on-chain lookup tables from a VersionedMessage.
@@ -2341,20 +2339,19 @@ impl SurfnetSvmLocker {
         remote_ctx: &Option<(SurfnetRemoteClient, CommitmentConfig)>,
         message: &VersionedMessage,
     ) -> SurfpoolResult<Option<TransactionLoadedAddresses>> {
-        match message {
-            VersionedMessage::Legacy(_) => Ok(None),
-            VersionedMessage::V0(message) => {
-                if message.address_table_lookups.is_empty() {
-                    return Ok(None);
-                }
-                let mut loaded = TransactionLoadedAddresses::new();
-                for alt in message.address_table_lookups.iter() {
-                    self.get_lookup_table_addresses(remote_ctx, alt, &mut loaded)
-                        .await?;
-                }
-
-                Ok(Some(loaded))
+        if let Some(address_table_lookups) = message.address_table_lookups() {
+            if address_table_lookups.is_empty() {
+                return Ok(None);
             }
+            let mut loaded = TransactionLoadedAddresses::new();
+            for alt in address_table_lookups {
+                self.get_lookup_table_addresses(remote_ctx, alt, &mut loaded)
+                    .await?;
+            }
+
+            Ok(Some(loaded))
+        } else {
+            Ok(None)
         }
     }
 
@@ -2508,6 +2505,15 @@ impl SurfnetSvmLocker {
                         .as_ref()
                         .map(|l| l.to_address_table_lookups())
                         .unwrap_or_default(),
+                })
+            }
+            VersionedMessage::V1(ref message) => {
+                VersionedMessage::V1(solana_message::v1::Message {
+                    account_keys: message_accounts[..message.account_keys.len()].to_vec(),
+                    config: message.config,
+                    header: message.header,
+                    lifetime_specifier: *transaction.message.recent_blockhash(),
+                    instructions: ixs_for_tx.clone(),
                 })
             }
         };

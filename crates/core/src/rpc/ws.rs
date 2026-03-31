@@ -882,7 +882,7 @@ impl Rpc for SurfpoolWsRpc {
         let rpc_transaction_config = RpcTransactionConfig {
             encoding: Some(UiTransactionEncoding::Json),
             commitment: config.commitment,
-            max_supported_transaction_version: Some(0),
+            max_supported_transaction_version: Some(1),
         };
 
         let subscription_type = if config.enable_received_notification.unwrap_or(false) {

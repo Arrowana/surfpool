@@ -1399,6 +1399,7 @@ impl Full for SurfpoolFullRpc {
                         Some(RpcInflationReward {
                             amount: 0,
                             commission: None,
+                            commission_bps: None,
                             effective_slot: svm_reader.get_latest_absolute_slot(),
                             epoch: svm_reader.latest_epoch_info().epoch,
                             post_balance: 0,
@@ -1440,6 +1441,7 @@ impl Full for SurfpoolFullRpc {
             rpc,
             pubsub,
             version: None,
+            client_id: None,
             feature_set: None,
             shred_version: None,
         }])
@@ -1768,12 +1770,9 @@ impl Full for SurfpoolFullRpc {
             }
 
             let replacement_blockhash = if config.replace_recent_blockhash {
-                match &mut unsanitized_tx.message {
-                    VersionedMessage::Legacy(message) => {
-                        message.recent_blockhash = latest_blockhash
-                    }
-                    VersionedMessage::V0(message) => message.recent_blockhash = latest_blockhash,
-                }
+                unsanitized_tx
+                    .message
+                    .set_recent_blockhash(latest_blockhash);
                 Some(RpcBlockhash {
                     blockhash: latest_blockhash.to_string(),
                     last_valid_block_height: latest_epoch_info.block_height,
@@ -2419,10 +2418,7 @@ impl Full for SurfpoolFullRpc {
                             loaded_addresses.as_ref().map(|l| l.all_loaded_addresses()),
                         );
 
-                        let instructions = match &tx.message {
-                            VersionedMessage::V0(msg) => &msg.instructions,
-                            VersionedMessage::Legacy(msg) => &msg.instructions,
-                        };
+                        let instructions = tx.message.instructions();
 
                         // Find all compute unit prices in the transaction's instructions
                         let compute_unit_prices = instructions
@@ -3109,14 +3105,7 @@ mod tests {
             ),
             _ => unimplemented!(),
         };
-        match &mut tx.message {
-            VersionedMessage::Legacy(msg) => {
-                msg.recent_blockhash = bad_blockhash;
-            }
-            VersionedMessage::V0(msg) => {
-                msg.recent_blockhash = bad_blockhash;
-            }
-        }
+        tx.message.set_recent_blockhash(bad_blockhash);
 
         let invalid_config = RpcSimulateTransactionConfig {
             sig_verify: true,
@@ -3271,17 +3260,26 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let instructions = match tx.message.clone() {
-            VersionedMessage::Legacy(message) => message
-                .instructions
-                .iter()
-                .map(|ix| UiCompiledInstruction::from(ix, Some(1)))
-                .collect(),
-            VersionedMessage::V0(message) => message
-                .instructions
-                .iter()
-                .map(|ix| UiCompiledInstruction::from(ix, Some(1)))
-                .collect(),
+        let instructions = tx
+            .message
+            .instructions()
+            .iter()
+            .map(|ix| UiCompiledInstruction::from(ix, Some(1)))
+            .collect();
+        let address_table_lookups = match &tx.message {
+            VersionedMessage::Legacy(_) => None,
+            VersionedMessage::V0(message) => Some(
+                message
+                    .address_table_lookups
+                    .iter()
+                    .map(Into::into)
+                    .collect(),
+            ),
+            VersionedMessage::V1(_) => None,
+        };
+        let transaction_config = match &tx.message {
+            VersionedMessage::V1(message) => Some((&message.config).into()),
+            _ => None,
         };
 
         assert_eq!(
@@ -3304,16 +3302,15 @@ mod tests {
                             ],
                             recent_blockhash: recent_blockhash.to_string(),
                             instructions,
-                            address_table_lookups: match tx.message {
-                                VersionedMessage::Legacy(_) => None,
-                                VersionedMessage::V0(_) => Some(vec![]),
-                            },
+                            address_table_lookups,
+                            transaction_config,
                         })
                     }),
                     meta: res.transaction.clone().meta, // Using the same values to avoid reintroducing processing logic errors
                     version: Some(version)
                 },
-                block_time: res.block_time // Using the same values to avoid flakyness
+                block_time: res.block_time, // Using the same values to avoid reintroducing processing logic errors
+                transaction_index: None,
             }
         );
     }
@@ -4239,6 +4236,7 @@ mod tests {
                 rpc: Some("127.0.0.1:8899".parse().unwrap()),
                 pubsub: Some("127.0.0.1:8900".parse().unwrap()),
                 version: None,
+                client_id: None,
                 feature_set: None,
                 shred_version: None,
             }]
@@ -4588,7 +4586,8 @@ mod tests {
                 effective_slot,
                 amount: 0,
                 post_balance: 0,
-                commission: None
+                commission: None,
+                commission_bps: None,
             })
         )
     }

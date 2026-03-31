@@ -24,7 +24,7 @@ use solana_transaction::{
     sanitized::SanitizedTransaction,
     versioned::{TransactionVersion, VersionedTransaction},
 };
-use solana_transaction_context::TransactionReturnData;
+use solana_transaction_context::transaction::TransactionReturnData;
 use solana_transaction_error::TransactionError;
 use solana_transaction_status::{
     Encodable, EncodableWithMeta, EncodeError, EncodedTransaction,
@@ -33,7 +33,9 @@ use solana_transaction_status::{
     TransactionStatusMeta, TransactionTokenBalance, UiAccountsList, UiLoadedAddresses,
     UiTransaction, UiTransactionEncoding, UiTransactionStatusMeta,
     option_serializer::OptionSerializer,
-    parse_accounts::{parse_legacy_message_accounts, parse_v0_message_accounts},
+    parse_accounts::{
+        parse_legacy_message_accounts, parse_v0_message_accounts, parse_v1_message_accounts,
+    },
     parse_ui_inner_instructions,
 };
 use spl_token_2022_interface::extension::{
@@ -478,6 +480,9 @@ impl TransactionWithStatusMeta {
                             message.encode(UiTransactionEncoding::Json)
                         }
                         VersionedMessage::V0(message) => message.json_encode(),
+                        VersionedMessage::V1(message) => {
+                            message.encode(UiTransactionEncoding::Json)
+                        }
                     },
                 }),
                 UiTransactionEncoding::JsonParsed => EncodedTransaction::Json(UiTransaction {
@@ -493,6 +498,9 @@ impl TransactionWithStatusMeta {
                         }
                         VersionedMessage::V0(message) => {
                             message.encode_with_meta(UiTransactionEncoding::JsonParsed, &self.meta)
+                        }
+                        VersionedMessage::V1(message) => {
+                            message.encode(UiTransactionEncoding::JsonParsed)
                         }
                     },
                 }),
@@ -535,6 +543,7 @@ impl TransactionWithStatusMeta {
                 );
                 parse_v0_message_accounts(&loaded_message)
             }
+            VersionedMessage::V1(message) => parse_v1_message_accounts(message),
         };
 
         Ok(EncodedTransactionWithStatusMeta {

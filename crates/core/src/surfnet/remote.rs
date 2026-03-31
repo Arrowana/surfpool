@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use serde_json::json;
 use solana_account::Account;
+use solana_account_decoder::{UiAccountEncoding, UiDataSliceConfig};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_client::{GetConfirmedSignaturesForAddress2Config, RpcClientConfig},
@@ -12,8 +13,8 @@ use solana_client::{
     rpc_filter::RpcFilterType,
     rpc_request::{RpcRequest, TokenAccountsFilter},
     rpc_response::{
-        RpcAccountBalance, RpcConfirmedTransactionStatusWithSignature, RpcKeyedAccount, RpcResult,
-        RpcTokenAccountBalance,
+        OptionalContext, RpcAccountBalance, RpcConfirmedTransactionStatusWithSignature,
+        RpcKeyedAccount, RpcResult, RpcTokenAccountBalance,
     },
 };
 use solana_clock::Slot;
@@ -299,18 +300,56 @@ impl SurfnetRemoteClient {
         filters: Option<Vec<RpcFilterType>>,
     ) -> SurfpoolResult<RemoteRpcResult<Vec<(Pubkey, Account)>>> {
         handle_remote_rpc(|| async {
-            self.client
-                .get_program_accounts_with_config(
-                    program_id,
-                    RpcProgramAccountsConfig {
-                        filters,
-                        with_context: Some(false),
-                        account_config,
-                        ..Default::default()
-                    },
+            let mut account_config = account_config;
+            if account_config.encoding.is_none() {
+                account_config.encoding = Some(UiAccountEncoding::Base64);
+            }
+            if account_config.data_slice.is_none() {
+                account_config.data_slice = None::<UiDataSliceConfig>;
+            }
+
+            let accounts = self
+                .client
+                .send::<OptionalContext<Vec<RpcKeyedAccount>>>(
+                    RpcRequest::GetProgramAccounts,
+                    json!([
+                        program_id.to_string(),
+                        RpcProgramAccountsConfig {
+                            filters,
+                            with_context: Some(false),
+                            account_config,
+                            ..Default::default()
+                        }
+                    ]),
                 )
                 .await
-                .map_err(|e| SurfpoolError::get_program_accounts(*program_id, e))
+                .map_err(|e| SurfpoolError::get_program_accounts(*program_id, e))?
+                .parse_value();
+
+            accounts
+                .into_iter()
+                .map(|keyed_account| {
+                    let pubkey = Pubkey::from_str(&keyed_account.pubkey).map_err(|e| {
+                        SurfpoolError::get_program_accounts(
+                            *program_id,
+                            format!(
+                                "invalid program account pubkey {}: {e}",
+                                keyed_account.pubkey
+                            ),
+                        )
+                    })?;
+                    let account = keyed_account.account.to_account().ok_or_else(|| {
+                        SurfpoolError::get_program_accounts(
+                            *program_id,
+                            format!(
+                                "failed to decode remote account for {}",
+                                keyed_account.pubkey
+                            ),
+                        )
+                    })?;
+                    Ok((pubkey, account))
+                })
+                .collect()
         })
         .await
     }

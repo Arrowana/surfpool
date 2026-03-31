@@ -98,7 +98,7 @@ impl GraphQLValueAsync<DefaultScalarValue> for DynamicQuery {
         _arguments: &Arguments,
         executor: &Executor<DataloaderContext>,
     ) -> Pin<
-        Box<(dyn futures::Future<Output = Result<juniper::Value, FieldError>> + std::marker::Send)>,
+        Box<dyn futures::Future<Output = Result<juniper::Value, FieldError>> + std::marker::Send>,
     > {
         let res = match field_name {
             "apiVersion" => executor.resolve_with_ctx(&(), "1.0"),

@@ -21,7 +21,7 @@ use agave_feature_set::{
     move_stake_and_move_lamports_ixs, raise_cpi_nesting_limit_to_8, reenable_sbpf_v0_execution,
     reenable_zk_elgamal_proof_program, remaining_compute_units_syscall_enabled,
     remove_bpf_loader_incorrect_program_id, simplify_alt_bn128_syscall_error_codes,
-    stake_raise_minimum_delegation_to_1_sol, stricter_abi_and_runtime_constraints,
+    stake_raise_minimum_delegation_to_1_sol,
 };
 use base64::{Engine, prelude::BASE64_STANDARD};
 use chrono::Utc;
@@ -672,9 +672,7 @@ impl SurfnetSvm {
             SvmFeature::MovePrecompileVerificationToSvm => {
                 Some(move_precompile_verification_to_svm::id())
             }
-            SvmFeature::StricterAbiAndRuntimeConstraints => {
-                Some(stricter_abi_and_runtime_constraints::id())
-            }
+            SvmFeature::StricterAbiAndRuntimeConstraints => None,
             SvmFeature::EnableBpfLoaderSetAuthorityCheckedIx => {
                 Some(enable_bpf_loader_set_authority_checked_ix::id())
             }
@@ -2906,10 +2904,8 @@ impl SurfnetSvm {
                             self.transactions.get(&signature.to_string()).ok().flatten()
                         {
                             let (tx_meta, _) = tx_data.as_ref();
-                            let mut accounts = match &tx_meta.transaction.message {
-                                VersionedMessage::Legacy(msg) => msg.account_keys.clone(),
-                                VersionedMessage::V0(msg) => msg.account_keys.clone(),
-                            };
+                            let mut accounts =
+                                tx_meta.transaction.message.static_account_keys().to_vec();
 
                             accounts.extend(&tx_meta.meta.loaded_addresses.writable);
                             accounts.extend(&tx_meta.meta.loaded_addresses.readonly);

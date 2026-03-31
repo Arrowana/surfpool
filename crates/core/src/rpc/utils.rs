@@ -14,7 +14,6 @@ use solana_client::{
 use solana_commitment_config::CommitmentConfig;
 use solana_hash::Hash;
 use solana_message::{AccountKeys, VersionedMessage};
-use solana_perf::packet::QUIC_MAX_STREAM_SIZE;
 use solana_pubkey::{ParsePubkeyError, Pubkey};
 use solana_signature::Signature;
 use solana_transaction_status::{
@@ -23,6 +22,8 @@ use solana_transaction_status::{
 };
 
 use crate::error::{SurfpoolError, SurfpoolResult};
+
+const QUIC_MAX_STREAM_SIZE: usize = solana_message::v1::MAX_TRANSACTION_SIZE;
 
 pub fn convert_transaction_metadata_from_canonical(
     transaction_metadata: &TransactionMetadata,
@@ -240,7 +241,7 @@ pub fn get_default_transaction_config() -> RpcTransactionConfig {
     RpcTransactionConfig {
         encoding: Some(UiTransactionEncoding::Json),
         commitment: Some(CommitmentConfig::default()),
-        max_supported_transaction_version: Some(0),
+        max_supported_transaction_version: Some(1),
     }
 }
 
@@ -249,7 +250,7 @@ pub fn adjust_default_transaction_config(config: &mut RpcTransactionConfig) {
         config.encoding = Some(UiTransactionEncoding::Json);
     }
     if config.max_supported_transaction_version.is_none() {
-        config.max_supported_transaction_version = Some(0);
+        config.max_supported_transaction_version = Some(1);
     }
     if config.commitment.is_none() {
         config.commitment = Some(CommitmentConfig::default());
